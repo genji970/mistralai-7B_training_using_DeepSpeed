@@ -1,4 +1,4 @@
-torch==2.8.0
+torch==2.6.0
 transformers==4.53.3
 datasets==4.0.0
 deepspeed==0.17.2
