@@ -1,0 +1,40 @@
+# ✅ Python 가상환경 (.venv) 무시
+.venv/
+venv/
+
+# ✅ Python 캐시 파일 무시
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ✅ Jupyter Notebook 체크포인트 (혹시 쓸 경우)
+.ipynb_checkpoints/
+
+# ✅ VSCode 설정 (PyCharm은 .idea를 원하면 추가)
+.vscode/
+.idea/
+
+# ✅ 로그, 결과파일, 임시파일
+*.log
+*.tmp
+*.out
+*.DS_Store
+
+# ✅ 파이썬 빌드 결과물 무시
+build/
+dist/
+*.egg-info/
+
+# ✅ 파이썬 테스트 결과물
+.coverage
+.tox/
+pytest_cache/
+
+# ✅ 환경 설정 파일 (원하면)
+.env
+.env.*
+
+# ✅ Docker 관련
+*.pid
+*.tar
