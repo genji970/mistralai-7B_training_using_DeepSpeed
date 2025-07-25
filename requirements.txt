@@ -1,9 +1,9 @@
 # python.version == 3.11.13
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu121
 
-torch==2.6.0.dev20241112+cu121
-torchvision==0.22.0+cu118
-torchaudio==2.7.0+cu118
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+torchaudio==2.5.1+cu121
 
 numpy==2.1.2
 pandas==2.3.1

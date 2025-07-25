@@ -1,35 +1,31 @@
 from transformers import AutoTokenizer
 
-alpaca_prompt = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
-
-### Instruction:
-{}
-
-### Input:
-{}
-
-### Response:
-{}"""
-
 tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.3")
 EOS_TOKEN = tokenizer.eos_token
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 tokenizer.pad_token = '[PAD]'
 
-def formatting_prompts_func(example):
-    instruction = example["instruction"]
-    input_text = example["input"]
-    output = example["output"]
-
-    if input_text.strip():
-        text = alpaca_prompt.format(instruction, input_text, output)
-    else:
-        # input이 없는 경우 Input 섹션 제거
-        text = alpaca_prompt.replace("### Input:\n{}\n\n", "").format(instruction, output)
-
-    return { "text": text + EOS_TOKEN }
-
 def tokenize(example):
-    return tokenizer(example["text"], truncation=True, padding="max_length", max_length=512)
+    # prompt는 항상 문자열임
+    model_inputs = tokenizer(
+        example["prompt"],
+        truncation=True,
+        padding="max_length",
+        max_length=512
+    )
 
+    # completion도 문자열일 경우만 처리
+    completion = example["completion"]
+    if isinstance(completion, list):  # 이미 토큰화된 경우
+        labels = completion
+    else:  # 문자열이면 토큰화
+        with tokenizer.as_target_tokenizer():
+            labels = tokenizer(
+                completion + EOS_TOKEN,
+                truncation=True,
+                padding="max_length",
+                max_length=512
+            )["input_ids"]
 
+    model_inputs["labels"] = labels
+    return model_inputs
