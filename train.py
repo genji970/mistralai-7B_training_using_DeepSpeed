@@ -4,11 +4,11 @@ from datasets import load_dataset
 from model_load import model , tokenizer
 
 from data_load import dataset
-train_data = dataset["train"]
+train_data = dataset
 
 from tokenizer import tokenize
 
-
+model.resize_token_embeddings(len(tokenizer))
 tokenized_dataset = train_data.map(tokenize, batched=True)
 
 training_args = TrainingArguments(

@@ -12,7 +12,9 @@ alpaca_prompt = """Below is an instruction that describes a task, paired with an
 {}"""
 
 tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.3")
-EOS_TOKEN = tokenizer.eos_token  # 미리 선언한 tokenizer 객체에서 가져옴
+EOS_TOKEN = tokenizer.eos_token
+tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+tokenizer.pad_token = '[PAD]'
 
 def formatting_prompts_func(example):
     instruction = example["instruction"]
