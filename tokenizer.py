@@ -1,31 +1,34 @@
-from transformers import AutoTokenizer
+IGNORE_INDEX = -100
 
-tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.3")
-EOS_TOKEN = tokenizer.eos_token
-tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-tokenizer.pad_token = '[PAD]'
+def tokenize(examples):
+    EOS_TOKEN = tokenizer.eos_token or ""
 
-def tokenize(example):
-    # prompt는 항상 문자열임
-    model_inputs = tokenizer(
-        example["prompt"],
-        truncation=True,
-        padding="max_length",
-        max_length=512
+    # 리스트 보장
+    prompts = examples["prompt"] if isinstance(examples["prompt"], list) else [examples["prompt"]]
+    completions = examples["completion"] if isinstance(examples["completion"], list) else [examples["completion"]]
+    completions = [c + EOS_TOKEN for c in completions]
+
+    # 각각 토크나이즈
+    model_inputs = tokenizer(prompts, truncation=True, padding=False)
+    label_outputs = tokenizer(completions, truncation=True, padding=False)
+
+    input_ids = model_inputs["input_ids"]
+    labels = label_outputs["input_ids"]
+
+    # 🔧 label 비어 있거나 2차원 아닌 경우 처리
+    for i in range(len(labels)):
+        if len(labels[i]) == 0:
+            labels[i] = [IGNORE_INDEX]
+
+    # 🔧 정렬과 패딩
+    padded = tokenizer.pad(
+        {
+            "input_ids": input_ids,
+            "attention_mask": model_inputs["attention_mask"],
+            "labels": labels,
+        },
+        padding=True,
+        return_tensors=None
     )
 
-    # completion도 문자열일 경우만 처리
-    completion = example["completion"]
-    if isinstance(completion, list):  # 이미 토큰화된 경우
-        labels = completion
-    else:  # 문자열이면 토큰화
-        with tokenizer.as_target_tokenizer():
-            labels = tokenizer(
-                completion + EOS_TOKEN,
-                truncation=True,
-                padding="max_length",
-                max_length=512
-            )["input_ids"]
-
-    model_inputs["labels"] = labels
-    return model_inputs
+    return padded
