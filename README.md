@@ -17,5 +17,4 @@ This project includes components from:
    - Source: https://github.com/ultralytics/ultralytics
    - License: AGPL-3.0
      
-Please be aware that **AGPL-3.0** from YOLOv8 requires that your entire repository, including your custom code, must comply with AGPL-3.0 if it is distributed or used in a network service.
 
