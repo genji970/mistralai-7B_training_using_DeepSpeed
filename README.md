@@ -2,7 +2,7 @@
 
 This project includes components from:
 
-1. **Your Custom Code**
+1. **This project's Custom Code**
    - Author: genji970
    - License: MIT License
 
