@@ -1,5 +1,6 @@
 Data will be collected from youtube. 
 
+since usually, youtube data are not good data for training instruct mode llm, data needs preprocessing or model needs.
 
 ## 📜 Licenses
 
