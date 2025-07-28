@@ -1,1 +1,1 @@
-youtube_list = ['https://www.youtube.com/watch?v=bw73L7G9p74']
+youtube_list = ['']
