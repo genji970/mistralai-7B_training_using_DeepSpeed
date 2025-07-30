@@ -1,7 +1,6 @@
 mistral 7B instruct -> rlhf training with dataset from huggingface.<br>
 
-<img width="1024" height="1024" alt="Image" src="https://github.com/user-attachments/assets/21533da6-d00e-4a36-bcab-c5f26ddbd162" />
-
+<img width="1024" height="1536" alt="Image" src="https://github.com/user-attachments/assets/978e3e16-9e02-43f9-bc7c-90ff7ffc0026" />
 
 1)This pipeline does not include parallel processing(e.g doing for to multiple answers).(yet)<br>
 2)Considering using youtube data(under creative commons license) as training dataset if it's legal.<br>
