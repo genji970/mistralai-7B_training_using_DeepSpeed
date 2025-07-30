@@ -15,7 +15,7 @@ This project includes components from:
 
 3. ** **
    - Source: 
-   - License: 
+   - License: CC BY‑SA 4.0
 
    
      
