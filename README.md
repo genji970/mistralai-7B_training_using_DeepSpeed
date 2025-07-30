@@ -2,6 +2,8 @@ mistral 7B instruct -> rlhf training with dataset from huggingface.<br>
 
 <img width="1024" height="1536" alt="Image" src="https://github.com/user-attachments/assets/978e3e16-9e02-43f9-bc7c-90ff7ffc0026" />
 
+calculating cos_similarity between (context,question) , (context, answer) and adding 2 sentences that is highly related to question and answer.
+
 1)This pipeline does not include parallel processing(e.g doing for to multiple answers).(yet)<br>
 2)Considering using youtube data(under creative commons license) as training dataset if it's legal.<br>
 3)Didn't apply optimization in this repo such as using gpt to generate answer pairs/judge such answer's reward score/ etc.<br>
