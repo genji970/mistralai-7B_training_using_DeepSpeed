@@ -1,6 +1,5 @@
-Data will be collected from youtube. 
+Data will be collected from community. 
 
-since usually, youtube data are not good data for training instruct mode llm, data needs preprocessing or model needs.
 
 ## 📜 Licenses
 
@@ -14,13 +13,10 @@ This project includes components from:
    - Source: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3
    - License: Apache-2.0
 
-3. **Ultralytics YOLOv8**
-   - Source: https://github.com/ultralytics/ultralytics
+3. **Reddit**
+   - Source: 
    - License: AGPL-3.0
 
-4. **Youtube**
-   - Source: 
-   - License: 
    
      
 
