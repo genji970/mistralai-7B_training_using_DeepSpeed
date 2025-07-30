@@ -9,26 +9,18 @@ from filtering_danger import is_safe_content
 from data_score_func import compute_reward
 from topic_ratio_criteria import should_sample_regex , TOPIC_REGEX_PATTERNS
 
-# Reddit API 인증
-reddit = praw.Reddit(
-    client_id="",
-    client_secret="",
-    user_agent="reddit_qa_collector"
-)
+# data 경로
 
 # 저장 경로
-save_dir = "C:/reddit_dataset"
+save_dir = "file_path"
 os.makedirs(save_dir, exist_ok=True)
 output_path = os.path.join(save_dir, "qa_pairs_with_reward.ndjson")
 
-subreddit_name = "AskReddit"
-MAX_POSTS = 1000
-
 with open(output_path, "w", encoding="utf-8") as fout:
     count = 0
-    for submission in reddit.subreddit(subreddit_name).hot(limit=MAX_POSTS):
+    for :
         try:
-            if submission.stickied or submission.locked or submission.num_comments == 0:
+            if :
                 continue
 
             title = submission.title.strip()
