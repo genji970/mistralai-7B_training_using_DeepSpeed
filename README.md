@@ -15,7 +15,7 @@ This project includes components from:
 
 3. **Reddit**
    - Source: 
-   - License: AGPL-3.0
+   - License: 
 
    
      
