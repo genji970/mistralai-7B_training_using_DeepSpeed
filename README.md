@@ -9,6 +9,11 @@ calculating cos_similarity between (context,question) , (context, answer) and ad
 3)Didn't apply optimization in this repo such as using gpt to generate answer pairs/judge such answer's reward score/ etc.<br>
 4) paper used:
 
+### Not yet done ###
+1) pyspark 
+2) deepspeed opt
+
+
 ## 📜 Licenses
 
 This project includes components from:
