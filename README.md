@@ -12,7 +12,7 @@ calculating cos_similarity between (context,question) , (context, answer) and ad
 ### Not yet done ###
 1) pyspark 
 2) deepspeed opt
-
+3) prompt opt such as "Black-Box Prompt Optimization: Aligning Large Language Models without Model Training"
 
 ## 📜 Licenses
 
