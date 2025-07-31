@@ -7,6 +7,7 @@ calculating cos_similarity between (context,question) , (context, answer) and ad
 1)This pipeline does not include parallel processing(e.g doing for to multiple answers).(yet)<br>
 2)Considering using youtube data(under creative commons license) as training dataset if it's legal.<br>
 3)Didn't apply optimization in this repo such as using gpt to generate answer pairs/judge such answer's reward score/ etc.<br>
+4) paper used:
 
 ## 📜 Licenses
 
