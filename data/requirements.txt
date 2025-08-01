@@ -1,3 +1,0 @@
-praw
-nltk
-sentence-transformers
