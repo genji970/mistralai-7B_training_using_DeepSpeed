@@ -1,0 +1,76 @@
+propmt engineering 
+
+Black-Box Prompt Optimization: Aligning Large Language Models
+ without Model Training
+
+: change user prompt to fit LLMs' input understanding features. prompt understanding such as clarification, explanation.
+
+generating two response from user instruction and user choose which one is better. From this, pair data generates.
+Make LLm to explain why bad answer is bad and user rewrite prompt fixing the reason. -> optimized prompt
+
+{original prompt, optimized prompt} -> train -> "prompt preference optimizer' they call.
+
+loss : given X_user, X<t, get log_prob of X_t. ( X_user is previous prompt, X_t is an element of opt prompt
+
+
+
+ LANGUAGE MODEL DECODING AS DIRECT METRICS
+ OPTIMIZATION
+
+sampling method는 반복성이 적은 텍스트를 생성하지만 담론 구조가 단절되기 쉽다, search 기반 방법은 주제의 일관성은 있지만
+반복이 증가한다.
+
+
+flashattention : fast and memory efficient exact attention with IO-Awareness
+
+gpu : SRAM , HBM , DRAM
+
+HBM : 텐서들을 저장하고 있는 계층. .to('cuda') 등
+          nvidia-smi 명령어를 통해 확인할 수 있는 계층
+
+SRAM : HBM에서 텐서들을 읽어와서 실질적인 연산을 수행.(read)
+           연산이 끝난 텐서들을 사용자가 접근할 수 있도록 다시 HBM으로 보냄(write)
+
+연산보다 I/O가 더 오래 걸리는 memory bound현상.
+
+compute-bound : 
+1) SRAM에서의 연산(FLOPs)이 병목인 연산(matmul,...)
+2) high arithmetic intensity
+
+memory-bound
+1) hbm <-> sram의 통신(IO)가 병목인 연산(element wise ops,...)
+2) low arithmetic intensity
+
+gpu hierarchy
+현재 하드웨어적으로 gpu는 FLOPs보다 IO가 더 느린 상황.
+pipeline의 가속을 위해서는,해당 연산의 FLOPs를 줄이는 것이 유리한지, io를 줄이는 것이 유리한지 판단해야함
+
+nvidia GPU progression을 본다.
+
+attention 연산은 memory bounded한 연산.
+gpu 계층 간의 O(N^2) 통신을 줄이는 것이 관건이다.
+
+flashattention은 FLOPs aware가 아닌 IO aware한 방법으로 attention의 time/memory efficiency를 달성.
+
+N^2 matrix를 연산 과정에서 만들지(materialize하지) 않음.
+
+O = Attention(Q,K,V)가 하나의 GPU 연산 호출(Kernel)이 되도록 융합(fusion).
+kernel fusion : 여러 개의 kernel을 하나로 합치는 것.
+
+tiling :
+1)보통 tensor를 sram에 모두 올리는 것은 불가능하다
+효율적인 병렬 연산을 위해 tensor를 복수의 blocks들로 나누어 연산한다==tiling
+tiling을 통해 gpu 친화적인 연산을 수행한다.
+
+
+matrix multiplication에 softmax를 fuse하기 위해서는, softmax연산도 tiling된 형태로 연산이 가능해야함.
+하지만 softmax는 전체 입력에 대한 합을 필요로 하는 reduction 연산.
+
+이를 해결하기 위해, online safe softmax와 비슷한 tiling softmax를 구현하여 사용한다.
+
+ statistics만 잘 가지고 있으면, softmax도 decompose가 가능하다
+
+
+'S,P가 계속 통신되지 않고, tiling softmax를 쓰는게 핵심이다.'
+
+
