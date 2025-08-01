@@ -1,4 +1,4 @@
-collect_data.py -> main.py
+collect_data.py works as main.py
 
 dataset : nvidia/Nemotron almost 24million samples. 
 category : {coda, math, steam, functool,
