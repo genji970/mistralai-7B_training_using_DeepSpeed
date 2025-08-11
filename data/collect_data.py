@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 from parser import parse_args
 from datasets import load_dataset
 from pyspark.sql import SparkSession
@@ -33,6 +34,30 @@ if __name__ == "__main__":
     else:
         print(f"✅ 이미 폴더 존재: {output_path}")
 
+    # 데이터셋 저장 및 로드
+    """
+    D:/에 cache저장하고 싶으면, windows powershell 기준,
+    $env:HF_HOME = "D:/hf_home"
+    $env:HF_DATASETS_CACHE = "D:/hf_datasets_cache"
+    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
+    """
+
+    dataset_name = "nvidia/Nemotron-Post-Training-Dataset-v1"
+    safe_name = dataset_name.replace("/", "__")
+    write_path = os.path.join(args.save_path , dataset_name, safe_name + ".jsonl")
+
+    ds = load_dataset(dataset_name, split="math", streaming=True)
+    with open(write_path, "w", encoding="utf-8") as f:
+        for i, ex in enumerate(ds):
+            f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+            #print(f"[{i}] 저장됨:", ex)
+            if i == 0:
+                print(f"✅ 원본 jsonl 파일 저장됨: {safe_name + '.jsonl'}")
+            # 너무 많으면 제한
+            # if i >= 1000:
+            #     break
+    sys.stdout.flush()
+
     # UDF 등록
     udf_extract_relevant_sentences = udf(extract_relevant_sentences, StringType())
     udf_compute_reward = udf(compute_reward, FloatType())
@@ -46,17 +71,6 @@ if __name__ == "__main__":
     udf_extract_answers = udf(
         lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[2],
         ArrayType(StringType()))
-
-    # 데이터셋 저장 및 로드
-    """
-    D:/에 cache저장하고 싶으면, windows powershell 기준,
-    $env:HF_HOME = "D:/hf_home"
-    $env:HF_DATASETS_CACHE = "D:/hf_datasets_cache"
-    """
-    ds = load_dataset(args.dataset_name, split="train")
-    ds.to_json(safe_name + ".jsonl", lines=True)
-    print(f"✅ 원본 jsonl 파일 저장됨: {safe_name + '.jsonl'} (샘플 1줄)")
-    sys.stdout.flush()
 
     # 파일에 실제로 데이터 들어갔는지 간단히 출력
     with open(safe_name + ".jsonl", encoding="utf-8") as f:
