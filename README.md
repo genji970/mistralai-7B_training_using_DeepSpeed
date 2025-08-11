@@ -1,4 +1,4 @@
-mistral 7B instruct -> rlhf training with dataset from huggingface.<br>
+data preprocess using pyspark->mistral 7B instruct -> rlhf training with dataset from huggingface.<br>
 
 <img width="1024" height="1536" alt="Image" src="https://github.com/user-attachments/assets/978e3e16-9e02-43f9-bc7c-90ff7ffc0026" />
 
