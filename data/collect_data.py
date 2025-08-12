@@ -6,6 +6,7 @@ import orjson
 from itertools import islice
 from concurrent.futures import ThreadPoolExecutor
 from parser import parse_args
+from pathlib import Path
 from datasets import load_dataset
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, udf
@@ -21,8 +22,8 @@ from train_data_fit import extract_fields_squad
 if __name__ == "__main__":
     args = parse_args()
 
-    print(f"✅ 저장 경로: {args.save_path}")
-    print(f"✅ 데이터셋 이름: {args.dataset_name}")
+    print(f"저장 경로: {args.save_path}")
+    print(f"데이터셋 이름: {args.dataset_name}")
 
     safe_name = args.dataset_name.replace("/", "__")
     os.makedirs(args.save_path, exist_ok=True)
@@ -30,9 +31,9 @@ if __name__ == "__main__":
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-        print(f"✅ 폴더 생성됨: {output_path}")
+        print(f"폴더 생성됨: {output_path}")
     else:
-        print(f"✅ 이미 폴더 존재: {output_path}")
+        print(f"이미 폴더 존재: {output_path}")
 
     dataset_name = args.dataset_name
     write_path = os.path.join(output_path, safe_name + ".jsonl")
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     D:/에 cache저장하고 싶으면, windows powershell 기준,
     $env:HF_HOME = "D:/hf_home"
     $env:HF_DATASETS_CACHE = "D:/hf_datasets_cache"
-    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
+    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.01
     """
 
     # streaming dataset load
@@ -55,27 +56,30 @@ if __name__ == "__main__":
     def process_batch(batch):
         return [orjson.dumps(ex) + b"\n" for ex in batch]
 
-    BATCH_SIZE = 2
+    BATCH_SIZE = 4096
     MAX_WORKERS = 1
 
-    start_dl = time.time()
-    with open(write_path, "wb", buffering=1024 * 1024) as f:
-        it = iter(ds)
-        wrote_first = False
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            while True:
-                chunk = list(islice(it, BATCH_SIZE))
-                if not chunk:
-                    break
-                futures = executor.submit(process_batch, chunk)
-                lines = futures.result()
-                f.writelines(lines)
-                if not wrote_first:
-                    print(f"✅ 원본 jsonl 파일 저장 시작: {safe_name + '.jsonl'}")
-                    wrote_first = True
-    end_dl = time.time()
-    print(f"✅ Streaming 저장 완료 (소요: {end_dl - start_dl:.2f}초)")
-    sys.stdout.flush()
+    if os.path.exists(write_path):
+        print(f"이미 파일이 존재하여 저장 과정 건너뜀: {write_path}")
+    else:
+        start_dl = time.time()
+        with open(write_path, "wb", buffering=1024 * 1024) as f:
+            it = iter(ds)
+            wrote_first = False
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                while True:
+                    chunk = list(islice(it, BATCH_SIZE))
+                    if not chunk:
+                        break
+                    fut = executor.submit(process_batch, chunk)
+                    lines = fut.result()  # bytes 리스트여야 함
+                    f.writelines(lines)
+                    if not wrote_first:
+                        print(f"원본 jsonl 파일 저장 시작: {safe_name + '.jsonl'}")
+                        wrote_first = True
+        end_dl = time.time()
+        print(f"Streaming 저장 완료 (소요: {end_dl - start_dl:.2f}초)")
+        sys.stdout.flush()
 
     # ===== Spark UDF 등록 =====
     udf_extract_relevant_sentences = udf(extract_relevant_sentences, StringType())
@@ -91,14 +95,33 @@ if __name__ == "__main__":
         lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[2],
         ArrayType(StringType()))
 
-    with open(write_path, encoding="utf-8") as f:
+    # 경로 디버그 + URI 변환
+    p = Path(write_path).resolve()
+    print("exists?", p.exists(), "| path:", p)
+    spark_uri = p.as_uri()  # 예: file:///D:/.../nvidia__Nemotron-Post-Training-Dataset-v1.jsonl
+    print("spark_uri:", spark_uri)  # <-- 경로 문제 디버깅을 위해 URI도 출력
+
+    # 첫 줄 프리뷰 (텍스트 모드)
+    with open(write_path, "r", encoding="utf-8", errors="replace") as f:
         print("샘플:", f.readline().strip()[:200])
         sys.stdout.flush()
 
-    spark = SparkSession.builder.appName(safe_name).getOrCreate()
+    # Spark 세션 및 JSONL 로드 (중요: spark_uri 사용)
+    spark = (
+        SparkSession.builder
+        .master("local[*]")
+        .appName(safe_name)
+        .getOrCreate()
+    )
     spark.sparkContext.setLogLevel("INFO")
-    df = spark.read.json(write_path)
-    print(f"✅ Spark DataFrame 로드 완료, row 수: {df.count()}")
+
+    # Windows 로컬 파일은 URI로 읽는 게 안전
+    df = (
+        spark.read
+        .option("multiLine", "false")  # JSON Lines
+        .json(spark_uri)
+    )
+    print(f"Spark DataFrame 로드 완료, row 수: {df.count()}")
     sys.stdout.flush()
 
     # 카테고리별 샘플링
@@ -158,15 +181,19 @@ if __name__ == "__main__":
         print("RLHF mode: reward 컬럼 추가")
         sys.stdout.flush()
 
-    df_proc.select(*select_cols).write.mode("overwrite").json(output_path)
+    # ======= 경로 충돌 방지: 결과는 원본 폴더(output_path) 하위 'spark_out'에 저장 =======
+    spark_out_dir = os.path.join(output_path, "spark_out")
+    os.makedirs(spark_out_dir, exist_ok=True)
+
+    df_proc.select(*select_cols).write.mode("overwrite").json(spark_out_dir)
     print("Spark 결과 파일 저장 완료")
     sys.stdout.flush()
-    print("저장된 파일 목록:", os.listdir(output_path))
+    print("저장된 파일 목록:", os.listdir(spark_out_dir))
     sys.stdout.flush()
 
     end_time = time.time()
     elapsed = end_time - start_time
-    print(f"Spark 처리 및 저장 완료: {output_path}")
+    print(f"Spark 처리 및 저장 완료: {spark_out_dir}")
     print(f"총 소요 시간: {elapsed:.2f}초 ({elapsed/60:.2f}분)")
 
     spark.stop()
