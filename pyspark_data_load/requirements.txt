@@ -1,0 +1,6 @@
+praw
+nltk
+sentence-transformers
+orjson
+datasets
+pyspark
