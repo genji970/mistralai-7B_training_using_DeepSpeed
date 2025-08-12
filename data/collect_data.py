@@ -43,10 +43,10 @@ if __name__ == "__main__":
 
     # 데이터셋 저장 및 로드
     """
-    D:/에 cache저장하고 싶으면, windows powershell 기준,
-    $env:HF_HOME = "D:/hf_home"
-    $env:HF_DATASETS_CACHE = "D:/hf_datasets_cache"
-    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
+    캐시 경로 예시 (POSIX 쉘):
+    export HF_HOME="~/hf_home"
+    export HF_DATASETS_CACHE="~/hf_datasets_cache"
+    python collect_data.py --save_path /data --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
     """
 
     # streaming dataset load
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # 경로 디버그 + URI 변환
     p = Path(write_path).resolve()
     print("exists?", p.exists(), "| path:", p)
-    spark_uri = p.as_uri()  # 예: file:///D:/.../nvidia__Nemotron-Post-Training-Dataset-v1.jsonl
+    spark_uri = p.as_uri()  # 예: file:///.../nvidia__Nemotron-Post-Training-Dataset-v1.jsonl
     print("spark_uri:", spark_uri)  # <-- 경로 문제 디버깅을 위해 URI도 출력
 
     # 첫 줄 프리뷰 (텍스트 모드)
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     )
     spark.sparkContext.setLogLevel("INFO")
 
-    # Windows 로컬 파일은 URI로 읽는 게 안전
+    # 로컬 파일은 URI로 읽는 게 안전
     df = (
         spark.read
         .option("multiLine", "false")  # JSON Lines
@@ -155,9 +155,9 @@ if __name__ == "__main__":
 
     df_proc = (
         df_sampled
-        .withColumn("context", udf_extract_context(col("*")))
-        .withColumn("question", udf_extract_question(col("*")))
-        .withColumn("answers", udf_extract_answers(col("*")))
+        .withColumn("context", udf_extract_context(col("context"), col("question"), col("answers")))
+        .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
+        .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
         .withColumn("answer", col("answers")[0])
         .withColumn("topic_ok", udf_should_sample_regex("context", "question"))
         .withColumn("safe_ok", udf_is_safe_content("context", "question", "answer"))
