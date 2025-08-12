@@ -4,14 +4,34 @@ data preprocess using pyspark->mistral 7B instruct -> rlhf training with dataset
 
 calculating cos_similarity between (context,question) , (context, answer) and adding 2 sentences that is highly related to question and answer.
 
-1)This pipeline does not include parallel processing(e.g doing for to multiple answers).(yet)<br>
-2)Considering using youtube data(under creative commons license) as training dataset if it's legal.<br>
-3)Didn't apply optimization in this repo such as using gpt to generate answer pairs/judge such answer's reward score/ etc.<br>
-4) paper used:
+### error ###
+```python
+[nltk_data] Downloading package punkt to
+[nltk_data]     C:\Users\qnckd\AppData\Roaming\nltk_data...
+[nltk_data]   Package punkt is already up-to-date!
+[nltk_data] Downloading package averaged_perceptron_tagger to
+[nltk_data]     C:\Users\qnckd\AppData\Roaming\nltk_data...
+[nltk_data]   Package averaged_perceptron_tagger is already up-to-
+[nltk_data]       date!
+[nltk_data] Downloading package stopwords to
+[nltk_data]     C:\Users\qnckd\AppData\Roaming\nltk_data...
+[nltk_data]   Package stopwords is already up-to-date!
+✅ 저장 경로: D:/
+✅ 데이터셋 이름: nvidia/Nemotron-Post-Training-Dataset-v1
+✅ 이미 폴더 존재: D:/nvidia__Nemotron-Post-Training-Dataset-v1
+Resolving data files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 183/183 [00:00<00:00, 247.11it/s]
+Resolving data files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 159/159 [00:00<00:00, 257.73it/s]
+Resolving data files: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 660/660 [00:00<00:00, 1139.57it/s]
+Resolving data files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 183/183 [00:00<00:00, 305.04it/s]
+Resolving data files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 159/159 [00:00<00:00, 644.47it/s]
+Resolving data files: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 660/660 [00:00<00:00, 2222.10it/s]
+✅ 원본 jsonl 파일 저장 시작: nvidia__Nemotron-Post-Training-Dataset-v1.jsonl
+✅ Streaming 저장 완료 (소요: 1502.38초)
+샘플: {"uuid":"fb215f9b-9372-4a08-875e-94184764ad51","license":"CC BY 4.0","generator":"DeepSeek-R1-0528","version":"v1","category":"math","reasoning":"on","messages":[{"role":"user","content":"In a regular
+지정된 경로를 찾을 수 없습니다.
+```
+The way hadoop read a path and open(write_path, "wb") seems different.
 
-### Not yet done ###
-2) deepspeed opt
-3) prompt opt such as "Black-Box Prompt Optimization: Aligning Large Language Models without Model Training"
 
 ## 📜 Licenses
 
@@ -29,7 +49,7 @@ This project includes components from:
    - Source: [https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3](https://huggingface.co/datasets/nvidia/Nemotron-Post-Training-Dataset-v1)
    - License: @misc{bercovich2025llamanemotronefficientreasoningmodels,
       title={Llama-Nemotron: Efficient Reasoning Models}, 
-      author={Akhiad Bercovich and Itay Levy and Izik Golan and Mohammad Dabbah and Ran El-Yaniv and Omri Puny and Ido Galil and Zach Moshe and Tomer Ronen and Najeeb Nabwani and Ido Shahaf and Oren Tropp and Ehud Karpas and Ran Zilberstein and Jiaqi Zeng and Soumye Singhal and Alexander Bukharin and Yian Zhang and Tugrul Konuk and Gerald Shen and Ameya Sunil Mahabaleshwarkar and Bilal Kartal and Yoshi Suhara and Olivier Delalleau and Zijia Chen and Zhilin Wang and David Mosallanezhad and Adi Renduchintala and Haifeng Qian and Dima Rekesh and Fei Jia and Somshubra Majumdar and Vahid Noroozi and Wasi Uddin Ahmad and Sean Narenthiran and Aleksander Ficek and Mehrzad Samadi and Jocelyn Huang and Siddhartha Jain and Igor Gitman and Ivan Moshkov and Wei Du and Shubham Toshniwal and George Armstrong and Branislav Kisacanin and Matvei Novikov and Daria Gitman and Evelina Bakhturina and Jane Polak Scowcroft and John Kamalu and Dan Su and Kezhi Kong and Markus Kliegl and Rabeeh Karimi and Ying Lin and Sanjeev Satheesh and Jupinder Parmar and Pritam Gundecha and Brandon Norick and Joseph Jennings and Shrimai Prabhumoye and Syeda Nahida Akter and Mostofa Patwary and Abhinav Khattar and Deepak Narayanan and Roger Waleffe and Jimmy Zhang and Bor-Yiing Su and Guyue Huang and Terry Kong and Parth Chadha and Sahil Jain and Christine Harvey and Elad Segal and Jining Huang and Sergey Kashirsky and Robert McQueen and Izzy Putterman and George Lam and Arun Venkatesan and Sherry Wu and Vinh Nguyen and Manoj Kilaru and Andrew Wang and Anna Warno and Abhilash Somasamudramath and Sandip Bhaskar and Maka Dong and Nave Assaf and Shahar Mor and Omer Ullman Argov and Scot Junkin and Oleksandr Romanenko and Pedro Larroy and Monika Katariya and Marco Rovinelli and Viji Balas and Nicholas Edelman and Anahita Bhiwandiwalla and Muthu Subramaniam and Smita Ithape and Karthik Ramamoorthy and Yuting Wu and Suguna Varshini Velury and Omri Almog and Joyjit Daw and Denys Fridman and Erick Galinkin and Michael Evans and Katherine Luna and Leon Derczynski and Nikki Pope and Eileen Long and Seth Schneider and Guillermo Siman and Tomasz Grzegorzek and Pablo Ribalta and Monika Katariya and Joey Conway and Trisha Saar and Ann Guan and Krzysztof Pawelec and Shyamala Prayaga and Oleksii Kuchaiev and Boris Ginsburg and Oluwatobi Olabiyi and Kari Briski and Jonathan Cohen and Bryan Catanzaro and Jonah Alben and Yonatan Geifman and Eric Chung and Chris Alexiuk},
+      author={Akhiad Bercovich ...},
       year={2025},
       eprint={2505.00949},
       archivePrefix={arXiv},
