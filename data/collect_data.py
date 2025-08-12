@@ -46,7 +46,7 @@ if __name__ == "__main__":
     D:/에 cache저장하고 싶으면, windows powershell 기준,
     $env:HF_HOME = "D:/hf_home"
     $env:HF_DATASETS_CACHE = "D:/hf_datasets_cache"
-    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.01
+    python collect_data.py --save_path D:/ --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
     """
 
     # streaming dataset load
