@@ -4,6 +4,9 @@ data preprocess using pyspark->mistral 7B instruct -> rlhf training with dataset
 
 calculating cos_similarity between (context,question) , (context, answer) and adding 2 sentences that is highly related to question and answer.
 
+### now ###
+Now I'm working on building data load process with pyspark streaming mode. With this, can load nvidia/Nemotron-Post-Training-Dataset-v1[math]
+
 ### plan ###
 1. vlm by adding vision adapters.
 2. reasoning.
