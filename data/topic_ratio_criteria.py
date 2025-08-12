@@ -69,8 +69,17 @@ TOPIC_REGEX_PATTERNS = {
 
 import random
 
-def should_sample_regex(full_text: str) -> bool:
-    full_text = full_text.lower()
+def should_sample_regex(context: str, question: str) -> bool:
+    """
+    context와 question을 합쳐서 TOPIC_REGEX_PATTERNS에 따라 샘플링 여부를 결정
+    """
+    # None 방지
+    context = context or ""
+    question = question or ""
+    
+    # 두 텍스트를 합치고 소문자로 변환
+    full_text = f"{context} {question}".lower()
+
     for topic, config in TOPIC_REGEX_PATTERNS.items():
         pattern = config["pattern"]
         ratio = config["ratio"]

@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 환경 설정/가상환경
+.env
+.venv/
+env/
+venv/
+
+# 빌드 아티팩트
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebook 체크포인트
+.ipynb_checkpoints

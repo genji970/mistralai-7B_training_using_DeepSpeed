@@ -4,6 +4,9 @@ import time
 import json
 import orjson
 from itertools import islice
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType, ArrayType
+from pyspark.sql.functions import get, size
 from concurrent.futures import ThreadPoolExecutor
 from parser import parse_args
 from pathlib import Path
@@ -57,7 +60,7 @@ if __name__ == "__main__":
         return [orjson.dumps(ex) + b"\n" for ex in batch]
 
     BATCH_SIZE = 4096
-    MAX_WORKERS = 1
+    MAX_WORKERS = 8
 
     if os.path.exists(write_path):
         print(f"이미 파일이 존재하여 저장 과정 건너뜀: {write_path}")
@@ -66,6 +69,13 @@ if __name__ == "__main__":
         with open(write_path, "wb", buffering=1024 * 1024) as f:
             it = iter(ds)
             wrote_first = False
+
+            # 진행률 집계 변수
+            rows_written = 0
+            report_every_batches = 1 
+            batch_idx = 0
+            last_report_t = start_dl
+
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 while True:
                     chunk = list(islice(it, BATCH_SIZE))
@@ -74,9 +84,34 @@ if __name__ == "__main__":
                     fut = executor.submit(process_batch, chunk)
                     lines = fut.result()  # bytes 리스트여야 함
                     f.writelines(lines)
+
+                    # 첫 기록 로그
                     if not wrote_first:
                         print(f"원본 jsonl 파일 저장 시작: {safe_name + '.jsonl'}")
                         wrote_first = True
+
+                    # 진행률 집계/출력
+                    batch_idx += 1
+                    rows_written += len(chunk)
+                    now = time.time()
+                    elapsed = now - start_dl
+                    rate = rows_written / elapsed if elapsed > 0 else 0.0
+                    # 파일 크기는 tell()로 즉시 확인(버퍼링 중이어도 파일 오프셋은 증가)
+                    bytes_written = f.tell()
+
+                    if batch_idx % report_every_batches == 0 or (now - last_report_t) >= 2.0:
+                        # 같은 줄 갱신
+                        print(
+                            f"\r[streaming] rows={rows_written:,} | size={bytes_written/1e6:.1f}MB | "
+                            f"rate={rate:,.0f} rec/s | elapsed={elapsed:.1f}s",
+                            end="",
+                            flush=True,
+                        )
+                        last_report_t = now
+
+            # 마지막 줄 개행
+            print()
+
         end_dl = time.time()
         print(f"Streaming 저장 완료 (소요: {end_dl - start_dl:.2f}초)")
         sys.stdout.flush()
@@ -151,27 +186,51 @@ if __name__ == "__main__":
         except Exception as e:
             print(" 평탄화 오류:", e)
 
+    get_user_question = F.udf(
+    lambda msgs: next((m["content"] for m in msgs if m["role"] == "user"), None) if msgs else None,
+    StringType()
+    )
+
+    get_assistant_answer = F.udf(
+    lambda msgs: [m["content"] for m in msgs if m["role"] == "assistant"] if msgs else [],
+    ArrayType(StringType())
+    )
+
+    # context는 따로 없으니 None으로 초기화 (또는 messages 합쳐서 생성)
+    df_sampled = (
+    df_sampled
+    .withColumn("question", get_user_question(F.col("messages")))
+    .withColumn("answers", get_assistant_answer(F.col("messages")))
+    .withColumn("context", F.lit(None).cast(StringType()))
+    )
+
+    # 이후에 udf_extract_context 적용
+    df_sampled = df_sampled.withColumn(
+    "context",
+    udf_extract_context(F.col("context"), F.col("question"), F.col("answers"))
+    )
+
+    # answers가 비어있는 row 제거
+    df_sampled = df_sampled.filter(size(col("answers")) > 0)
+
     start_time = time.time()
 
     df_proc = (
         df_sampled
-        .withColumn("context", udf_extract_context(col("context"), col("question"), col("answers")))
         .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
         .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
-        .withColumn("answer", col("answers")[0])
+        .withColumn("answer", get(col("answers"), 0))
         .withColumn("topic_ok", udf_should_sample_regex("context", "question"))
         .withColumn("safe_ok", udf_is_safe_content("context", "question", "answer"))
         .withColumn("output_filtered", udf_extract_relevant_sentences("context", "question", "answer"))
         .withColumn("output_cleaned", udf_clean_git_answer("output_filtered"))
     )
 
-    print("UDF 변환 적용 후 row 수:", df_proc.count())
     print("변환 후 컬럼:", df_proc.columns)
     print("변환된 데이터 샘플:")
     df_proc.show(3, truncate=120)
 
     df_proc = df_proc.filter(col("topic_ok") & col("safe_ok"))
-    print("필터링 적용 후 row 수:", df_proc.count())
     sys.stdout.flush()
 
     select_cols = ["question", "context", "output_cleaned"]
