@@ -37,6 +37,12 @@ def parse_args():
         help="rlhf 데이터셋 만들지 말지 여부"
     )
 
+    parser.add_argument(
+        "--debug",
+        type=str,
+        help="debugging_mode"
+    )
+
     return parser.parse_args()
 
 

@@ -142,12 +142,29 @@ if __name__ == "__main__":
         sys.stdout.flush()
 
     # Spark 세션 및 JSONL 로드 (중요: spark_uri 사용)
-    spark = (
+    if args.debug == 'False':
+        spark = (
         SparkSession.builder
         .master("local[*]")
         .appName(safe_name)
+        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "8g")
+        .config("spark.python.worker.memory", "4g")  # Python worker 메모리 제한 완화
         .getOrCreate()
-    )
+        )
+
+    if args.debug == 'True':
+        spark = (
+        SparkSession.builder
+        .master("local[*]")
+        .appName(safe_name)
+        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "8g")
+        .config("spark.python.worker.memory", "4g")  # Python worker 메모리 제한 완화
+        .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
+        .config("spark.python.worker.faulthandler.enabled", "true")
+        .getOrCreate()
+        )
     spark.sparkContext.setLogLevel("INFO")
 
     # 로컬 파일은 URI로 읽는 게 안전
@@ -186,6 +203,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(" 평탄화 오류:", e)
 
+    if args.debug == 'True':
+        df_sampled.printSchema()
+        df_sampled.show(3, truncate=False)
+
     get_user_question = F.udf(
     lambda msgs: next((m["content"] for m in msgs if m["role"] == "user"), None) if msgs else None,
     StringType()
@@ -213,6 +234,10 @@ if __name__ == "__main__":
     # answers가 비어있는 row 제거
     df_sampled = df_sampled.filter(size(col("answers")) > 0)
 
+    if args.debug == 'True':
+        df_sampled.printSchema()
+        df_sampled.show(3, truncate=False)
+
     start_time = time.time()
 
     df_proc = (
@@ -228,7 +253,7 @@ if __name__ == "__main__":
 
     print("변환 후 컬럼:", df_proc.columns)
     print("변환된 데이터 샘플:")
-    df_proc.show(3, truncate=120)
+    #df_proc.show(3, truncate=120) -> java heap space oom 발생함
 
     df_proc = df_proc.filter(col("topic_ok") & col("safe_ok"))
     sys.stdout.flush()
