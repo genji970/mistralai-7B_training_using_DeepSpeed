@@ -11,7 +11,7 @@ Now I'm working on building data load process with pyspark streaming mode. With 
 1. vlm by adding vision adapters.
 2. reasoning.
 
-### error ###
+### error & run code ###
 ```python
 [nltk_data] Downloading package punkt to
 [nltk_data]     C:\Users\qnckd\AppData\Roaming\nltk_data...
@@ -38,7 +38,36 @@ Resolving data files: 100%|█████████████████�
 지정된 경로를 찾을 수 없습니다.
 ```
 The way hadoop read a path and open(write_path, "wb") seems different.
+This does not occur in ubuntu env.
 
+pyspark dataset load & process code
+```python
+cd /workspace/sllm-mistralai-7B_training_using_pyspark-DeepSpeed/pyspark_data_load
+
+python collect_data.py --save_path /workspace --file_name nvidia --dataset_name nvidia/Nemotron-Post-Training-Dataset-v1 --sample_ratio 0.1
+```
+
+java install before running pyspark
+```python
+java -version
+
+apt-get update
+apt-get install -y openjdk-17-jdk
+
+
+# 설치된 Java 17 경로 찾기
+update-alternatives --config java
+
+# 예를 들어 /usr/lib/jvm/java-17-openjdk-amd64 라면
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+
+
+echo "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> ~/.bashrc
+echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> ~/.bashrc
+
+source ~/.bashrc
+```
 
 ## 📜 Licenses
 
@@ -63,3 +92,4 @@ This project includes components from:
       primaryClass={cs.CL},
       url={https://arxiv.org/abs/2505.00949}, 
 }
+
