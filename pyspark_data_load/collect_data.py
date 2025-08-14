@@ -21,6 +21,8 @@ from eliminating_symbols import clean_git_answer
 from filtering_danger import is_safe_content
 from topic_ratio_criteria import should_sample_regex
 from train_data_fit import extract_fields_squad
+from erase_unnecessary import keep_qa_with_think
+from preprocess import preprocess_messages
 
 if __name__ == "__main__":
     args = parse_args()
@@ -114,7 +116,6 @@ if __name__ == "__main__":
 
         end_dl = time.time()
         print(f"Streaming 저장 완료 (소요: {end_dl - start_dl:.2f}초)")
-        sys.stdout.flush()
 
     # ===== Spark UDF 등록 =====
     udf_extract_relevant_sentences = udf(extract_relevant_sentences, StringType())
@@ -122,6 +123,11 @@ if __name__ == "__main__":
     udf_clean_git_answer = udf(clean_git_answer, StringType())
     udf_is_safe_content = udf(is_safe_content, BooleanType())
     udf_should_sample_regex = udf(should_sample_regex, BooleanType())
+    udf_keep_qa_with_think = F.udf(
+    keep_qa_with_think,
+    ArrayType(ArrayType(StringType()))
+    )
+    udf_preprocess_messages = udf(preprocess_messages, ArrayType(ArrayType(StringType())))
     udf_extract_context = udf(
         lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[0], StringType())
     udf_extract_question = udf(
@@ -139,7 +145,6 @@ if __name__ == "__main__":
     # 첫 줄 프리뷰 (텍스트 모드)
     with open(write_path, "r", encoding="utf-8", errors="replace") as f:
         print("샘플:", f.readline().strip()[:200])
-        sys.stdout.flush()
 
     # Spark 세션 및 JSONL 로드 (중요: spark_uri 사용)
     if args.debug == 'False':
@@ -174,13 +179,11 @@ if __name__ == "__main__":
         .json(spark_uri)
     )
     print(f"Spark DataFrame 로드 완료, row 수: {df.count()}")
-    sys.stdout.flush()
 
     # 카테고리별 샘플링
     sampled_dfs = []
     categories = [row["category"] for row in df.select("category").distinct().collect()]
     print(f"카테고리 목록: {categories}")
-    sys.stdout.flush()
     for cat in categories:
         df_cat = df.filter(col("category") == cat)
         n = int(df_cat.count() * args.sample_ratio)
@@ -191,10 +194,18 @@ if __name__ == "__main__":
     for df_other in sampled_dfs[1:]:
         df_sampled = df_sampled.union(df_other)
 
+    # messages 컬럼을 think reasoning만 남기고 필터링
+    df_sampled = df_sampled.withColumn(
+    "messages",
+    udf_keep_qa_with_think(F.col("messages"))
+    )
+    df_sampled = df_sampled.withColumn(
+    "messages",
+    udf_preprocess_messages(F.col("messages"))
+    )
+
     print("샘플링 데이터 row 수:", df_sampled.count())
-    sys.stdout.flush()
     print("샘플링 데이터 컬럼:", df_sampled.columns)
-    sys.stdout.flush()
 
     if "answers" in df_sampled.columns:
         try:
@@ -208,14 +219,18 @@ if __name__ == "__main__":
         df_sampled.show(3, truncate=False)
 
     get_user_question = F.udf(
-    lambda msgs: next((m["content"] for m in msgs if m["role"] == "user"), None) if msgs else None,
+    lambda msgs: next((m[0] for m in msgs if len(m) >= 2 and m[1] == "user"), None) if msgs else None,
     StringType()
     )
 
     get_assistant_answer = F.udf(
-    lambda msgs: [m["content"] for m in msgs if m["role"] == "assistant"] if msgs else [],
+    lambda msgs: [m[0] for m in msgs if len(m) >= 2 and m[1] == "assistant"] if msgs else [],
     ArrayType(StringType())
     )
+
+    if args.debug == 'True':
+        print("None?")
+        df_sampled.select("messages").show(1, truncate=False)
 
     # context는 따로 없으니 None으로 초기화 (또는 messages 합쳐서 생성)
     df_sampled = (
@@ -225,11 +240,19 @@ if __name__ == "__main__":
     .withColumn("context", F.lit(None).cast(StringType()))
     )
 
+    if args.debug == 'True':
+        print("None?")
+        df_sampled.select("messages").show(1, truncate=False)
+
     # 이후에 udf_extract_context 적용
     df_sampled = df_sampled.withColumn(
     "context",
     udf_extract_context(F.col("context"), F.col("question"), F.col("answers"))
     )
+
+    if args.debug == 'True':
+        print("None?")
+        df_sampled.select("messages").show(1, truncate=False)
 
     # answers가 비어있는 row 제거
     df_sampled = df_sampled.filter(size(col("answers")) > 0)
@@ -241,14 +264,14 @@ if __name__ == "__main__":
     start_time = time.time()
 
     df_proc = (
-        df_sampled
-        .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
-        .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
-        .withColumn("answer", get(col("answers"), 0))
-        .withColumn("topic_ok", udf_should_sample_regex("context", "question"))
-        .withColumn("safe_ok", udf_is_safe_content("context", "question", "answer"))
-        .withColumn("output_filtered", udf_extract_relevant_sentences("context", "question", "answer"))
-        .withColumn("output_cleaned", udf_clean_git_answer("output_filtered"))
+    df_sampled
+    # .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
+    # .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
+    .withColumn("answer", get(col("answers"), 0))
+    .withColumn("topic_ok", udf_should_sample_regex("context", "question"))
+    .withColumn("safe_ok", udf_is_safe_content("context", "question", "answer"))
+    .withColumn("output_filtered", udf_extract_relevant_sentences("context", "question", "answer"))
+    .withColumn("output_cleaned", udf_clean_git_answer("output_filtered"))
     )
 
     print("변환 후 컬럼:", df_proc.columns)
@@ -256,14 +279,12 @@ if __name__ == "__main__":
     #df_proc.show(3, truncate=120) -> java heap space oom 발생함
 
     df_proc = df_proc.filter(col("topic_ok") & col("safe_ok"))
-    sys.stdout.flush()
 
     select_cols = ["question", "context", "output_cleaned"]
     if getattr(args, "rlhf_mode", False):
         df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "output_cleaned"))
         select_cols.append("reward")
         print("RLHF mode: reward 컬럼 추가")
-        sys.stdout.flush()
 
     # ======= 경로 충돌 방지: 결과는 원본 폴더(output_path) 하위 'spark_out'에 저장 =======
     spark_out_dir = os.path.join(output_path, "spark_out")
@@ -271,9 +292,7 @@ if __name__ == "__main__":
 
     df_proc.select(*select_cols).write.mode("overwrite").json(spark_out_dir)
     print("Spark 결과 파일 저장 완료")
-    sys.stdout.flush()
     print("저장된 파일 목록:", os.listdir(spark_out_dir))
-    sys.stdout.flush()
 
     end_time = time.time()
     elapsed = end_time - start_time
