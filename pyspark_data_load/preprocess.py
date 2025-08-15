@@ -30,26 +30,15 @@ def clean_message_text(text: str) -> str:
 
 # ---- 2) messages 배열 전체를 후처리하는 함수 ----
 # text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-def preprocess_messages(records):
-    """
-    입력: records = [[content, role, []], ...]
-    동작:
-      - 각 content에 clean_message_text 적용
-      - 구조는 그대로 유지
-    """
-    if not records:
+def preprocess_messages(answers):
+    if not answers:
         return []
-
     out = []
-    for rec in records:
-        if not rec or len(rec) < 2:
+    for answer in answers:
+        if not answer or len(answer) < 2:
             continue
-        content, role = rec[0], rec[1]
-        tool_calls = rec[2] if len(rec) > 2 else []
-
-        content = clean_message_text(content)
-        out.append([content, role, tool_calls if isinstance(tool_calls, list) else []])
-
+        answer = re.sub(r'//+', '', answer)      # '//' 이상 제거
+        answer = re.sub(r'\s+', ' ', answer).strip()
+        answer = clean_message_text(answer)      # 사용자 정의 클린 함수
+        out.append(answer)
     return out
-
-

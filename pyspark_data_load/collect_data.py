@@ -5,22 +5,19 @@ import json
 import orjson
 from itertools import islice
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, ArrayType
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType
 from pyspark.sql.functions import get, size
 from concurrent.futures import ThreadPoolExecutor
 from parser import parse_args
 from pathlib import Path
 from datasets import load_dataset
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, udf
+from pyspark.sql.functions import from_json, col, udf
 from pyspark.sql.types import StringType, FloatType, BooleanType, ArrayType
 
-from choose_relevant import extract_relevant_sentences
 from data_score_func import compute_reward
 from eliminating_symbols import clean_git_answer
 from filtering_danger import is_safe_content
-from topic_ratio_criteria import should_sample_regex
-from train_data_fit import extract_fields_squad
 from erase_unnecessary import keep_qa_with_think
 from preprocess import preprocess_messages
 
@@ -118,23 +115,14 @@ if __name__ == "__main__":
         print(f"Streaming 저장 완료 (소요: {end_dl - start_dl:.2f}초)")
 
     # ===== Spark UDF 등록 =====
-    udf_extract_relevant_sentences = udf(extract_relevant_sentences, StringType())
     udf_compute_reward = udf(compute_reward, FloatType())
     udf_clean_git_answer = udf(clean_git_answer, StringType())
     udf_is_safe_content = udf(is_safe_content, BooleanType())
-    udf_should_sample_regex = udf(should_sample_regex, BooleanType())
     udf_keep_qa_with_think = F.udf(
     keep_qa_with_think,
     ArrayType(ArrayType(StringType()))
     )
-    udf_preprocess_messages = udf(preprocess_messages, ArrayType(ArrayType(StringType())))
-    udf_extract_context = udf(
-        lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[0], StringType())
-    udf_extract_question = udf(
-        lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[1], StringType())
-    udf_extract_answers = udf(
-        lambda context, question, answers_dict: extract_fields_squad(context, question, answers_dict)[2],
-        ArrayType(StringType()))
+    udf_preprocess_messages = F.udf(preprocess_messages, ArrayType(StringType()))
 
     # 경로 디버그 + URI 변환
     p = Path(write_path).resolve()
@@ -179,7 +167,7 @@ if __name__ == "__main__":
         .json(spark_uri)
     )
     print(f"Spark DataFrame 로드 완료, row 수: {df.count()}")
-
+    
     # 카테고리별 샘플링
     sampled_dfs = []
     categories = [row["category"] for row in df.select("category").distinct().collect()]
@@ -194,38 +182,57 @@ if __name__ == "__main__":
     for df_other in sampled_dfs[1:]:
         df_sampled = df_sampled.union(df_other)
 
-    # messages 컬럼을 think reasoning만 남기고 필터링
-    df_sampled = df_sampled.withColumn(
-    "messages",
-    udf_keep_qa_with_think(F.col("messages"))
-    )
-    df_sampled = df_sampled.withColumn(
-    "messages",
-    udf_preprocess_messages(F.col("messages"))
-    )
-
     print("샘플링 데이터 row 수:", df_sampled.count())
     print("샘플링 데이터 컬럼:", df_sampled.columns)
 
-    if "answers" in df_sampled.columns:
-        try:
-            df_sampled = df_sampled.withColumn("output", col("answers.text")[0])
-            print("answers.text 평탄화 성공")
-        except Exception as e:
-            print(" 평탄화 오류:", e)
+    metadata_schema = StructType([
+    StructField("expected_answer", ArrayType(StringType()), True)
+    ])
+
+    if "metadata" in df_sampled.columns:
+        df_sampled = df_sampled.withColumn(
+        "metadata",
+        from_json(col("metadata"), metadata_schema)
+        )  # StringType -> StructType 변환
+
+        if "expected_answer" in df_sampled.select("metadata.*").columns:
+            try:
+                field_type = df_sampled.schema["metadata"].dataType["expected_answer"].dataType
+                if isinstance(field_type, ArrayType):
+                    df_sampled = df_sampled.withColumn(
+                    "expected_answer",
+                    col("metadata.expected_answer").getItem(0)
+                    )
+                    print("expected_answer 평탄화 성공")
+                else:
+                    df_sampled = df_sampled.withColumn(
+                    "expected_answer",
+                    col("metadata.expected_answer")
+                        )
+                    print("expected_answer 이미 평탄화됨")
+            except Exception as e:
+                print("expected_answer 처리 오류:", e)
 
     if args.debug == 'True':
         df_sampled.printSchema()
         df_sampled.show(3, truncate=False)
 
     get_user_question = F.udf(
-    lambda msgs: next((m[0] for m in msgs if len(m) >= 2 and m[1] == "user"), None) if msgs else None,
+    lambda msgs: next(
+        (m["content"] for m in msgs if isinstance(m, dict) and m.get("role") == "user"),
+        None
+    ) if msgs else None,
     StringType()
     )
 
     get_assistant_answer = F.udf(
-    lambda msgs: [m[0] for m in msgs if len(m) >= 2 and m[1] == "assistant"] if msgs else [],
+    lambda msgs: [m["content"] for m in msgs if isinstance(m, dict) and m.get("role") == "assistant"] if msgs else [],
     ArrayType(StringType())
+    )
+
+    get_expected_answer = F.udf(
+    lambda metadata: metadata.get("expected_answer") if isinstance(metadata, dict) else None,
+    StringType()
     )
 
     if args.debug == 'True':
@@ -237,18 +244,12 @@ if __name__ == "__main__":
     df_sampled
     .withColumn("question", get_user_question(F.col("messages")))
     .withColumn("answers", get_assistant_answer(F.col("messages")))
-    .withColumn("context", F.lit(None).cast(StringType()))
+    .withColumn("expected_answers", get_expected_answer(F.col("metadata")))
     )
 
     if args.debug == 'True':
         print("None?")
         df_sampled.select("messages").show(1, truncate=False)
-
-    # 이후에 udf_extract_context 적용
-    df_sampled = df_sampled.withColumn(
-    "context",
-    udf_extract_context(F.col("context"), F.col("question"), F.col("answers"))
-    )
 
     if args.debug == 'True':
         print("None?")
@@ -268,19 +269,18 @@ if __name__ == "__main__":
     # .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
     # .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
     .withColumn("answer", get(col("answers"), 0))
-    .withColumn("topic_ok", udf_should_sample_regex("context", "question"))
-    .withColumn("safe_ok", udf_is_safe_content("context", "question", "answer"))
-    .withColumn("output_filtered", udf_extract_relevant_sentences("context", "question", "answer"))
-    .withColumn("output_cleaned", udf_clean_git_answer("output_filtered"))
+    .withColumn("safe_ok", udf_is_safe_content("question", "answer"))
+    .withColumn("output_cleaned", udf_clean_git_answer("answer"))
+    .withColumn("answers", udf_preprocess_messages(F.col("answer")))
     )
 
     print("변환 후 컬럼:", df_proc.columns)
     print("변환된 데이터 샘플:")
     #df_proc.show(3, truncate=120) -> java heap space oom 발생함
 
-    df_proc = df_proc.filter(col("topic_ok") & col("safe_ok"))
+    df_proc = df_proc.filter(col("safe_ok"))
 
-    select_cols = ["question", "context", "output_cleaned"]
+    select_cols = ["question", "expected_answer", "output_cleaned"]
     if getattr(args, "rlhf_mode", False):
         df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "output_cleaned"))
         select_cols.append("reward")
