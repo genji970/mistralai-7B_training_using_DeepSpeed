@@ -1,15 +1,8 @@
 data preprocess using pyspark->mistral 7B instruct -> rlhf training with dataset from huggingface.<br>
 
-<img width="400" height="500" alt="Image" src="https://github.com/user-attachments/assets/978e3e16-9e02-43f9-bc7c-90ff7ffc0026" />
+<img width="300" height="400" alt="Image" src="https://github.com/user-attachments/assets/978e3e16-9e02-43f9-bc7c-90ff7ffc0026" />
 
 calculating cos_similarity between (context,question) , (context, answer) and adding 2 sentences that is highly related to question and answer.
-
-pyspark data process 
-<img width="800" height="700" alt="image" src="https://github.com/user-attachments/assets/1f890280-ba59-4316-aa68-b26876db8644" />
-
-
-### now ###
-Now I'm working on building data load process with pyspark streaming mode. With this, can load nvidia/Nemotron-Post-Training-Dataset-v1[math]
 
 ### plan ###
 1. vlm by adding vision adapters.
