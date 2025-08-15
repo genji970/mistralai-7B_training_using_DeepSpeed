@@ -39,7 +39,7 @@ def parse_args():
 
     parser.add_argument(
         "--debug",
-        type=str,
+        action="store_true",
         help="debugging_mode"
     )
 

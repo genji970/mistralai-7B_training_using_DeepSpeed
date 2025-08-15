@@ -6,7 +6,7 @@ import orjson
 from itertools import islice
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, ArrayType
-from pyspark.sql.functions import get, size
+from pyspark.sql.functions import get, size, expr, element_at, coalesce
 from concurrent.futures import ThreadPoolExecutor
 from parser import parse_args
 from pathlib import Path
@@ -119,8 +119,8 @@ if __name__ == "__main__":
     udf_clean_git_answer = udf(clean_git_answer, StringType())
     udf_is_safe_content = udf(is_safe_content, BooleanType())
     udf_keep_qa_with_think = F.udf(
-    keep_qa_with_think,
-    ArrayType(ArrayType(StringType()))
+        keep_qa_with_think,
+        ArrayType(ArrayType(StringType()))
     )
     udf_preprocess_messages = F.udf(preprocess_messages, ArrayType(StringType()))
 
@@ -135,29 +135,21 @@ if __name__ == "__main__":
         print("샘플:", f.readline().strip()[:200])
 
     # Spark 세션 및 JSONL 로드 (중요: spark_uri 사용)
-    if args.debug == 'False':
-        spark = (
-        SparkSession.builder
-        .master("local[*]")
-        .appName(safe_name)
-        .config("spark.executor.memory", "8g")
-        .config("spark.driver.memory", "8g")
-        .config("spark.python.worker.memory", "4g")  # Python worker 메모리 제한 완화
-        .getOrCreate()
-        )
+    spark_builder = (
+    SparkSession.builder
+    .master("local[*]")
+    .appName(safe_name)
+    .config("spark.executor.memory", "8g")
+    .config("spark.driver.memory", "8g")
+    .config("spark.python.worker.memory", "4g")
+    )
 
-    if args.debug == 'True':
-        spark = (
-        SparkSession.builder
-        .master("local[*]")
-        .appName(safe_name)
-        .config("spark.executor.memory", "8g")
-        .config("spark.driver.memory", "8g")
-        .config("spark.python.worker.memory", "4g")  # Python worker 메모리 제한 완화
-        .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
+    if args.debug: 
+        spark_builder = spark_builder \
+        .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true") \
         .config("spark.python.worker.faulthandler.enabled", "true")
-        .getOrCreate()
-        )
+
+    spark = spark_builder.getOrCreate()
     spark.sparkContext.setLogLevel("INFO")
 
     # 로컬 파일은 URI로 읽는 게 안전
@@ -185,78 +177,61 @@ if __name__ == "__main__":
     print("샘플링 데이터 row 수:", df_sampled.count())
     print("샘플링 데이터 컬럼:", df_sampled.columns)
 
+    # === 여기부터 최소 수정 파트 시작 ===
+
+    # 1) metadata 스키마: expected_answer를 배열로(뒤에서 element_at 사용)
     metadata_schema = StructType([
-    StructField("expected_answer", ArrayType(StringType()), True)
+        StructField("expected_answer", ArrayType(StringType()), True),
+        StructField("problem_source", StringType(), True)
     ])
 
-    if "metadata" in df_sampled.columns:
-        df_sampled = df_sampled.withColumn(
+    # JSON 문자열 -> Struct 변환 (1회)
+    df_sampled = df_sampled.withColumn(
         "metadata",
         from_json(col("metadata"), metadata_schema)
-        )  # StringType -> StructType 변환
-
-        if "expected_answer" in df_sampled.select("metadata.*").columns:
-            try:
-                field_type = df_sampled.schema["metadata"].dataType["expected_answer"].dataType
-                if isinstance(field_type, ArrayType):
-                    df_sampled = df_sampled.withColumn(
-                    "expected_answer",
-                    col("metadata.expected_answer").getItem(0)
-                    )
-                    print("expected_answer 평탄화 성공")
-                else:
-                    df_sampled = df_sampled.withColumn(
-                    "expected_answer",
-                    col("metadata.expected_answer")
-                        )
-                    print("expected_answer 이미 평탄화됨")
-            except Exception as e:
-                print("expected_answer 처리 오류:", e)
-
-    if args.debug == 'True':
-        df_sampled.printSchema()
-        df_sampled.show(3, truncate=False)
-
-    get_user_question = F.udf(
-    lambda msgs: next(
-        (m["content"] for m in msgs if isinstance(m, dict) and m.get("role") == "user"),
-        None
-    ) if msgs else None,
-    StringType()
     )
 
-    get_assistant_answer = F.udf(
-    lambda msgs: [m["content"] for m in msgs if isinstance(m, dict) and m.get("role") == "assistant"] if msgs else [],
-    ArrayType(StringType())
+    # expected_answer를 배열 또는 문자열 모두 처리
+    df_sampled = df_sampled.withColumn(
+    "expected_answer",
+    F.when(
+        F.col("metadata.expected_answer").isNotNull(),
+        F.when(
+            F.expr("typeof(metadata.expected_answer)") == F.lit("array<string>"),
+            F.element_at(F.col("metadata.expected_answer"), 1)
+        ).otherwise(F.col("metadata.expected_answer").cast(StringType()))
+    ).otherwise(F.lit(""))
     )
 
-    get_expected_answer = F.udf(
-    lambda metadata: metadata.get("expected_answer") if isinstance(metadata, dict) else None,
-    StringType()
+    print("=== expected_answer 필터 후 ===", df_sampled.count())
+
+    # 2) question / answers 추출 (고차함수)
+    df_sampled = df_sampled.withColumn(
+        "question",
+        expr("element_at(transform(filter(messages, x -> x.role = 'user'), x -> x.content), 1)")
+    ).withColumn(
+        "answers",
+        expr("transform(filter(messages, x -> x.role = 'assistant'), x -> x.content)")
+    ).filter(size(col("answers")) > 0)
+
+    # (당신 코드에 있던 재-평탄화 라인은 유지하되, 스키마에 맞도록 동작)
+    df_sampled = df_sampled.withColumn(
+        "expected_answer",
+        expr("element_at(metadata.expected_answer, 1)")
     )
 
-    if args.debug == 'True':
-        print("None?")
-        df_sampled.select("messages").show(1, truncate=False)
-
-    # context는 따로 없으니 None으로 초기화 (또는 messages 합쳐서 생성)
-    df_sampled = (
-    df_sampled
-    .withColumn("question", get_user_question(F.col("messages")))
-    .withColumn("answers", get_assistant_answer(F.col("messages")))
-    .withColumn("expected_answers", get_expected_answer(F.col("metadata")))
+    # 3) answers 전처리 후 answer(문자열) 추출
+    df_sampled = df_sampled.withColumn(
+        "answers",
+        udf_preprocess_messages(col("answers"))
+    ).withColumn(
+        "answer",
+        element_at(col("answers"), 1)   # 배열은 1부터
     )
 
-    if args.debug == 'True':
-        print("None?")
-        df_sampled.select("messages").show(1, truncate=False)
+    print("=== answers 필터 후 ===", df_sampled.count())
 
-    if args.debug == 'True':
-        print("None?")
-        df_sampled.select("messages").show(1, truncate=False)
-
-    # answers가 비어있는 row 제거
-    df_sampled = df_sampled.filter(size(col("answers")) > 0)
+    # === 최소 수정 파트 끝 ===
 
     if args.debug == 'True':
         df_sampled.printSchema()
@@ -264,19 +239,23 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
+    # df_proc: get(col("answers"), 0) 쓰지 말고, 이미 만든 answer 사용
     df_proc = (
-    df_sampled
-    # .withColumn("question", udf_extract_question(col("context"), col("question"), col("answers")))
-    # .withColumn("answers", udf_extract_answers(col("context"), col("question"), col("answers")))
-    .withColumn("answer", get(col("answers"), 0))
-    .withColumn("safe_ok", udf_is_safe_content("question", "answer"))
-    .withColumn("output_cleaned", udf_clean_git_answer("answer"))
-    .withColumn("answers", udf_preprocess_messages(F.col("answer")))
+        df_sampled
+        .withColumn("answer", col("answer"))  # 기존 라인 대체(의미상 유지)
+        .withColumn("safe_ok", udf_is_safe_content("question", "answer"))
+        .withColumn("output_cleaned", udf_clean_git_answer("answer"))
     )
 
+    df_proc = df_proc.withColumn(
+    "expected_answer",
+    F.coalesce(F.col("expected_answer"), F.lit(""))
+    )
+
+    print("=== df_proc 생성 후 ===", df_proc.count())
+
     print("변환 후 컬럼:", df_proc.columns)
-    print("변환된 데이터 샘플:")
-    #df_proc.show(3, truncate=120) -> java heap space oom 발생함
+    # df_proc.show(3, truncate=120)  # OOM 주의
 
     df_proc = df_proc.filter(col("safe_ok"))
 
