@@ -47,6 +47,9 @@ echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> ~/.bashrc
 source ~/.bashrc
 ```
 
+### paper list ###
+Let’s Verify Step by Step https://arxiv.org/pdf/2305.20050
+
 ## 📜 Licenses
 
 This project includes components from:
