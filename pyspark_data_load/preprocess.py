@@ -30,15 +30,11 @@ def clean_message_text(text: str) -> str:
 
 # ---- 2) messages 배열 전체를 후처리하는 함수 ----
 # text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-def preprocess_messages(answers):
-    if not answers:
-        return []
-    out = []
-    for answer in answers:
-        if not answer or len(answer) < 2:
-            continue
-        answer = re.sub(r'//+', '', answer)      # '//' 이상 제거
-        answer = re.sub(r'\s+', ' ', answer).strip()
-        answer = clean_message_text(answer)      # 사용자 정의 클린 함수
-        out.append(answer)
-    return out
+def preprocess_messages(answer: str):
+    if not answer or len(answer) < 2:
+        return ""
+    answer = re.sub(r'//+', '', answer)
+    answer = re.sub(r'\s+', ' ', answer).strip()
+    answer = clean_message_text(answer)
+    return answer
+

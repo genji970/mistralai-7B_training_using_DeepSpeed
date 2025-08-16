@@ -59,7 +59,7 @@ if __name__ == "__main__":
         return [orjson.dumps(ex) + b"\n" for ex in batch]
 
     BATCH_SIZE = 4096
-    MAX_WORKERS = 8
+    MAX_WORKERS = 9
 
     if os.path.exists(write_path):
         print(f"이미 파일이 존재하여 저장 과정 건너뜀: {write_path}")
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         keep_qa_with_think,
         ArrayType(ArrayType(StringType()))
     )
-    udf_preprocess_messages = F.udf(preprocess_messages, ArrayType(StringType()))
+    udf_preprocess_messages = F.udf(preprocess_messages, StringType())
 
     # 경로 디버그 + URI 변환
     p = Path(write_path).resolve()
@@ -143,11 +143,22 @@ if __name__ == "__main__":
     .config("spark.driver.memory", "8g")
     .config("spark.python.worker.memory", "4g")
     )
+    """
+    export SPARK_LOCAL_DIRS=/workspace/spark_tmp
+    mkdir -p /workspace/spark_tmp
 
+    == 
+
+    .config("spark.local.dir", "/workspace/spark_tmp")
+    """
     if args.debug: 
         spark_builder = spark_builder \
+        .config("spark.local.dir", "/workspace/spark_tmp") \
         .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true") \
         .config("spark.python.worker.faulthandler.enabled", "true")
+    else: 
+        spark_builder = spark_builder \
+        .config("spark.local.dir", "/workspace/spark_tmp")
 
     spark = spark_builder.getOrCreate()
     spark.sparkContext.setLogLevel("INFO")
@@ -181,7 +192,7 @@ if __name__ == "__main__":
 
     # 1) metadata 스키마: expected_answer를 배열로(뒤에서 element_at 사용)
     metadata_schema = StructType([
-        StructField("expected_answer", ArrayType(StringType()), True),
+        StructField("expected_answer", StringType(), True),
         StructField("problem_source", StringType(), True)
     ])
 
@@ -194,14 +205,9 @@ if __name__ == "__main__":
     # expected_answer를 배열 또는 문자열 모두 처리
     df_sampled = df_sampled.withColumn(
     "expected_answer",
-    F.when(
-        F.col("metadata.expected_answer").isNotNull(),
-        F.when(
-            F.expr("typeof(metadata.expected_answer)") == F.lit("array<string>"),
-            F.element_at(F.col("metadata.expected_answer"), 1)
-        ).otherwise(F.col("metadata.expected_answer").cast(StringType()))
-    ).otherwise(F.lit(""))
+    F.coalesce(F.col("metadata.expected_answer").cast(StringType()), F.lit(""))
     )
+
 
     print("=== expected_answer 필터 후 ===", df_sampled.count())
 
@@ -212,24 +218,8 @@ if __name__ == "__main__":
     ).withColumn(
         "answers",
         expr("transform(filter(messages, x -> x.role = 'assistant'), x -> x.content)")
-    ).filter(size(col("answers")) > 0)
-
-    # (당신 코드에 있던 재-평탄화 라인은 유지하되, 스키마에 맞도록 동작)
-    df_sampled = df_sampled.withColumn(
-        "expected_answer",
-        expr("element_at(metadata.expected_answer, 1)")
+    ).filter(size(col("answers")) > 0
     )
-
-    # 3) answers 전처리 후 answer(문자열) 추출
-    df_sampled = df_sampled.withColumn(
-        "answers",
-        udf_preprocess_messages(col("answers"))
-    ).withColumn(
-        "answer",
-        element_at(col("answers"), 1)   # 배열은 1부터
-    )
-
-    print("=== answers 필터 후 ===", df_sampled.count())
 
     # === 최소 수정 파트 끝 ===
 
@@ -242,9 +232,10 @@ if __name__ == "__main__":
     # df_proc: get(col("answers"), 0) 쓰지 말고, 이미 만든 answer 사용
     df_proc = (
         df_sampled
-        .withColumn("answer", col("answer"))  # 기존 라인 대체(의미상 유지)
+        .withColumn("answer", F.element_at(col("answers"), 1))
         .withColumn("safe_ok", udf_is_safe_content("question", "answer"))
         .withColumn("output_cleaned", udf_clean_git_answer("answer"))
+        .withColumn("preprocessed_output", udf_preprocess_messages("output_cleaned"))
     )
 
     df_proc = df_proc.withColumn(
@@ -259,9 +250,9 @@ if __name__ == "__main__":
 
     df_proc = df_proc.filter(col("safe_ok"))
 
-    select_cols = ["question", "expected_answer", "output_cleaned"]
+    select_cols = ["question", "expected_answer", "preprocessed_output"]
     if getattr(args, "rlhf_mode", False):
-        df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "output_cleaned"))
+        df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "preprocessed_output"))
         select_cols.append("reward")
         print("RLHF mode: reward 컬럼 추가")
 

@@ -5,34 +5,31 @@ import json
 import orjson
 from itertools import islice
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, ArrayType
-from pyspark.sql.functions import get, size
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType
+from pyspark.sql.functions import get, size, expr, element_at, coalesce
 from concurrent.futures import ThreadPoolExecutor
 from parser import parse_args
 from pathlib import Path
 from datasets import load_dataset
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, udf
+from pyspark.sql.functions import from_json, col, udf
 from pyspark.sql.types import StringType, FloatType, BooleanType, ArrayType
 
-from choose_relevant import extract_relevant_sentences
 from data_score_func import compute_reward
 from eliminating_symbols import clean_git_answer
 from filtering_danger import is_safe_content
-from topic_ratio_criteria import should_sample_regex
-from train_data_fit import extract_fields_squad
 from erase_unnecessary import keep_qa_with_think
 from preprocess import preprocess_messages
 
 # streaming dataset load
+args=parse_args()
+dataset_name = args.dataset_name
 ds = load_dataset(dataset_name, split="math", streaming=True)
 
 # ===== 첫 번째 row만 저장 =====
 first_row = next(iter(ds))  # 첫 번째 row만 가져오기
-with open(write_path, "wb") as f:
-    f.write(orjson.dumps(first_row) + b"\n")
 
-print(f"첫 번째 row만 저장 완료: {write_path}")
+print(f"첫 번째 row만 저장 완료: {first_row}")
 
 
 
