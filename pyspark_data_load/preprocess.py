@@ -1,29 +1,23 @@
 import re
 from pyspark.sql.functions import udf, col
-from pyspark.sql.types import ArrayType, StringType
+from pyspark.sql.types import ArrayType, StringType, StructType, StructField
 
 # ---- 1) 개별 문자열 클리너 ----
 def clean_message_text(text: str) -> str:
     if not text:
         return text
 
-    # (a) C/C++ 스타일 한줄 주석 //... 제거 (멀티라인 대응)
-    text = re.sub(r'//.*?$', '', text, flags=re.MULTILINE)
+    # 1) 줄 전체 주석 제거
+    text = re.sub(r'//.*', '', text)  
 
-    # (b) 중복된 <think> 블록이 여러 번 붙어있다면, 첫 번째만 남기고 나머지 제거
-    think_blocks = re.findall(r'<think>.*?</think>', text, flags=re.DOTALL)
-    if len(think_blocks) > 1:
-        # 본문에서 모든 think 제거 후 첫 번째 think + (나머지 본문) 형태로 재구성
-        text_wo_think = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-        first_think = think_blocks[0]
-        # 맨 앞에 첫 think 배치
-        text = f"{first_think} {text_wo_think}"
+    # 2) 남아있는 '//' 문자열 자체 제거 (URL 등도 날아감)
+    text = text.replace('//', '')
 
-    # (c) 공백 정리: 탭 -> 공백, 줄 끝 공백 제거, 연속 빈 줄을 한 줄로 축소
+    # 3) 공백 정리
     text = text.replace('\t', ' ')
-    text = re.sub(r'[ \t]+\n', '\n', text)        # 줄 끝 공백 제거
-    text = re.sub(r'\n{3,}', '\n\n', text)        # 3줄 이상 연속 개행 -> 2줄
-    text = re.sub(r' {2,}', ' ', text)            # 여러 공백 -> 한 칸
+    text = re.sub(r'[ \t]+\n', '\n', text)        
+    text = re.sub(r'\n{3,}', '\n\n', text)        
+    text = re.sub(r' {2,}', ' ', text)            
     text = text.strip()
 
     return text
@@ -34,7 +28,31 @@ def preprocess_messages(answer: str):
     if not answer or len(answer) < 2:
         return ""
     answer = re.sub(r'//+', '', answer)
+    answer = re.sub(r'\\+', '', answer)
     answer = re.sub(r'\s+', ' ', answer).strip()
     answer = clean_message_text(answer)
+    answer = make_think_variants(answer)
     return answer
 
+def make_think_variants(answer: str, max_versions: int = 5):
+    if not answer:
+        return [""] * max_versions
+    
+    # 모든 <think>...</think> 구간 추출
+    thinks = re.findall(r'<think>.*?</think>', answer, flags=re.DOTALL)
+    final_text = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
+    
+    variants = []
+    n = len(thinks)
+    for i in range(max_versions):
+        if i < n:
+            # 뒤에서 i개를 제거
+            reduced = ''.join(thinks[i:]) + " " + final_text
+        else:
+            reduced = final_text
+        variants.append(reduced.strip())
+    
+    return variants
+
+# Spark UDF 등록 (배열 리턴)
+udf_make_think_variants = udf(make_think_variants, ArrayType(StringType()))

@@ -24,6 +24,15 @@ def preprocess(dataset):
         return dataset  # 그대로 사용
     elif all(k in column_names for k in ("instruction", "output")):
         return dataset.map(format_prompt, remove_columns=column_names)
+    elif all(k in column_names for k in ("question", "expected_answer", "preprocessed_output")):
+        def map_to_prompt(example):
+            prompt = (
+                f"### Question:\n{example['question']}\n\n"
+                f"### Preprocessed Output:\n{example['preprocessed_output']}\n\n"
+                f"### Response:\n"
+            )
+            return {"prompt": prompt, "completion": example["expected_answer"]}
+    return dataset.map(map_to_prompt, remove_columns=column_names)
     else:
         raise ValueError(f"지원하지 않는 열 구성: {column_names}")
 
