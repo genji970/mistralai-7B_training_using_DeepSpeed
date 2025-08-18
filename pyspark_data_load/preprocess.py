@@ -31,28 +31,28 @@ def preprocess_messages(answer: str):
     answer = re.sub(r'\\+', '', answer)
     answer = re.sub(r'\s+', ' ', answer).strip()
     answer = clean_message_text(answer)
-    answer = make_think_variants(answer)
     return answer
 
 def make_think_variants(answer: str, max_versions: int = 5):
     if not answer:
         return [""] * max_versions
-    
+
     # 모든 <think>...</think> 구간 추출
     thinks = re.findall(r'<think>.*?</think>', answer, flags=re.DOTALL)
     final_text = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
-    
+
+    # 마지막 think는 답변이므로 제외
+    useful_thinks = thinks[:-1] if len(thinks) > 1 else []
+
     variants = []
-    n = len(thinks)
+    n = len(useful_thinks)
     for i in range(max_versions):
         if i < n:
-            # 뒤에서 i개를 제거
-            reduced = ''.join(thinks[i:]) + " " + final_text
+            # 뒤에서 i개를 제거 (마지막 제외한 구간만 사용)
+            reduced = ''.join(useful_thinks[i:]) + " " + final_text
         else:
             reduced = final_text
         variants.append(reduced.strip())
-    
+
     return variants
 
-# Spark UDF 등록 (배열 리턴)
-udf_make_think_variants = udf(make_think_variants, ArrayType(StringType()))

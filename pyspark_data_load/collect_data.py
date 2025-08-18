@@ -19,7 +19,7 @@ from data_score_func import compute_reward
 from eliminating_symbols import clean_git_answer
 from filtering_danger import is_safe_content
 from erase_unnecessary import keep_qa_with_think
-from preprocess import preprocess_messages
+from preprocess import preprocess_messages , make_think_variants
 
 if __name__ == "__main__":
     args = parse_args()
@@ -123,6 +123,7 @@ if __name__ == "__main__":
         ArrayType(ArrayType(StringType()))
     )
     udf_preprocess_messages = F.udf(preprocess_messages, StringType())
+    udf_make_think_variants = F.udf(make_think_variants, ArrayType(StringType()))
 
     # 경로 디버그 + URI 변환
     p = Path(write_path).resolve()
@@ -236,7 +237,12 @@ if __name__ == "__main__":
         .withColumn("safe_ok", udf_is_safe_content("question", "answer"))
         .withColumn("output_cleaned", udf_clean_git_answer("answer"))
         .withColumn("preprocessed_output", udf_preprocess_messages("output_cleaned"))
+        .withColumn("expected_answer", udf_preprocess_messages("expected_answer"))
     )
+
+    df_proc = df_proc.withColumn("variants", udf_make_think_variants("preprocessed_output"))
+    for i in range(5):
+        df_proc = df_proc.withColumn(f"preprocessed_output_{i+1}", col("variants").getItem(i))
 
     df_proc = df_proc.withColumn(
     "expected_answer",
@@ -250,7 +256,7 @@ if __name__ == "__main__":
 
     df_proc = df_proc.filter(col("safe_ok"))
 
-    select_cols = ["question", "expected_answer", "preprocessed_output"]
+    select_cols = ["question", "expected_answer", "preprocessed_output","preprocessed_output_1","preprocessed_output_2","preprocessed_output_3","preprocessed_output_4","preprocessed_output_5"]
     if getattr(args, "rlhf_mode", False):
         df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "preprocessed_output"))
         select_cols.append("reward")
@@ -260,7 +266,21 @@ if __name__ == "__main__":
     spark_out_dir = os.path.join(output_path, "spark_out")
     os.makedirs(spark_out_dir, exist_ok=True)
 
-    df_proc.select(*select_cols).write.mode("overwrite").json(spark_out_dir)
+    # 기본 0번 variant
+    df_out0 = df_proc.select("question", "expected_answer", col("preprocessed_output").alias("output"))
+
+    # variant_1 ~ variant_5
+    df_outs = [df_proc.select("question", "expected_answer", col(f"preprocessed_output_{i}").alias("output")) 
+           for i in range(1, 6)]
+
+    # 전부 합치기
+    df_final = df_out0
+    for d in df_outs:
+        df_final = df_final.union(d)
+
+    # 저장
+    df_final.write.mode("overwrite").json(spark_out_dir)
+
     print("Spark 결과 파일 저장 완료")
     print("저장된 파일 목록:", os.listdir(spark_out_dir))
 
