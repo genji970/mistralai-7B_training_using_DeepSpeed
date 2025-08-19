@@ -33,7 +33,7 @@ def preprocess_messages(answer: str):
     answer = clean_message_text(answer)
     return answer
 
-def make_think_variants(answer: str, max_versions: int = 5):
+def make_think_variants(answer: str, max_versions: int = 1):
     if not answer:
         return [""] * max_versions
 
@@ -41,18 +41,27 @@ def make_think_variants(answer: str, max_versions: int = 5):
     thinks = re.findall(r'<think>.*?</think>', answer, flags=re.DOTALL)
     final_text = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
 
-    # 마지막 think는 답변이므로 제외
-    useful_thinks = thinks[:-1] if len(thinks) > 1 else []
+    if len(thinks) == 0:
+        return [final_text] * max_versions
+
+    # 마지막 <think>는 항상 답변으로 고정
+    answer_think = thinks[-1]
+    useful_thinks = thinks[:-1]
 
     variants = []
     n = len(useful_thinks)
+
     for i in range(max_versions):
         if i < n:
-            # 뒤에서 i개를 제거 (마지막 제외한 구간만 사용)
-            reduced = ''.join(useful_thinks[i:]) + " " + final_text
+            # 끝에서 i+1번째 요소 제거
+            temp = useful_thinks[:]
+            del temp[-(i+1)]
+            reduced = ''.join(temp + [answer_think]) + " " + final_text
         else:
-            reduced = final_text
+            # 더 이상 뺄 게 없으면 그냥 최종 답변만
+            reduced = answer_think + " " + final_text
         variants.append(reduced.strip())
 
     return variants
+
 

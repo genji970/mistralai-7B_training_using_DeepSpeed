@@ -256,7 +256,7 @@ if __name__ == "__main__":
 
     df_proc = df_proc.filter(col("safe_ok"))
 
-    select_cols = ["question", "expected_answer", "preprocessed_output","preprocessed_output_1","preprocessed_output_2","preprocessed_output_3","preprocessed_output_4","preprocessed_output_5"]
+    select_cols = ["question", "expected_answer", "preprocessed_output","preprocessed_output_1"]
     if getattr(args, "rlhf_mode", False):
         df_proc = df_proc.withColumn("reward", udf_compute_reward("context", "question", "preprocessed_output"))
         select_cols.append("reward")
@@ -267,19 +267,22 @@ if __name__ == "__main__":
     os.makedirs(spark_out_dir, exist_ok=True)
 
     # 기본 0번 variant
-    df_out0 = df_proc.select("question", "expected_answer", col("preprocessed_output").alias("output"))
+    df_out0 = df_proc.select(
+    "question", 
+    "expected_answer", 
+    col("preprocessed_output").alias("output")
+    )
 
-    # variant_1 ~ variant_5
-    df_outs = [df_proc.select("question", "expected_answer", col(f"preprocessed_output_{i}").alias("output")) 
-           for i in range(1, 6)]
+    # variant_1
+    df_outs = [
+    df_proc.select("question", "expected_answer", col(f"preprocessed_output_{1}").alias("output")) 
+    ]
 
-    # 전부 합치기
-    df_final = df_out0
-    for d in df_outs:
-        df_final = df_final.union(d)
+    # 각기 따로 저장
+    df_out0.write.mode("overwrite").json("/workspace/out_variant0")
 
-    # 저장
-    df_final.write.mode("overwrite").json(spark_out_dir)
+    for i, d in enumerate(df_outs, start=1):
+        d.write.mode("overwrite").json(f"/workspace/out_variant{i}")
 
     print("Spark 결과 파일 저장 완료")
     print("저장된 파일 목록:", os.listdir(spark_out_dir))
